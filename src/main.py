@@ -27,7 +27,7 @@ class IncidentResponse(IncidentCreate):
 
 
 
-# --- The 5 Endpoints (Skeleton) ---
+# The 5 Endpoints
 @app.get("/live/departures", tags=["Utility"])
 def get_live_departures():
     """

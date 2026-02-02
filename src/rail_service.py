@@ -83,7 +83,7 @@ def get_live_arrivals(hub_code="LDS"):
             "from_name": "Manchester Piccadilly",
             "origin_city": "Manchester Piccadilly",
             "scheduled": "18:00",
-            "estimated": "18:25",  # Late!
+            "estimated": "18:25",
             "status": "Delayed",
             "delay_weight": 25,
             "platform": "12"
@@ -99,11 +99,11 @@ def get_live_arrivals(hub_code="LDS"):
             "platform": "5"
         },
         {
-            "from_code": "WKF", # PROOF: The logic will see this as "South Spoke"
+            "from_code": "WKF", 
             "from_name": "Wakefield Westgate",
-            "origin_city": "London Kings Cross", # Simulating the "London" train logic
+            "origin_city": "London Kings Cross", 
             "scheduled": "18:10",
-            "estimated": "Cancelled", # Critical failure!
+            "estimated": "Cancelled",
             "status": "Cancelled",
             "delay_weight": 60,
             "platform": "TBC"
