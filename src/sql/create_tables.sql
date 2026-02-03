@@ -14,7 +14,7 @@ CREATE TABLE routes (
     avg_travel_time_mins INT
 );
 
--- Create  Incidents Table (CRUD)
+-- Create Incidents Table (CRUD)
 CREATE TABLE incidents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     route_id INT REFERENCES routes(id),
