@@ -56,6 +56,7 @@ class IncidentUpdate(BaseModel):
 
 class IncidentResponse(IncidentCreate):
     id: uuid.UUID
+    owner_id: uuid.UUID
     created_at: datetime
     class Config:
         from_attributes = True
