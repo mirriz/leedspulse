@@ -1,6 +1,7 @@
 import requests
 from dotenv import load_dotenv
 import os
+from datetime import datetime
 
 load_dotenv()
 
@@ -8,7 +9,8 @@ BASE_URL = "https://huxley2.azurewebsites.net"
 TOKEN = os.environ.get("OLDBWS_TOKEN")
 
 def get_live_arrivals(hub_code="LDS"):
-    url = f"{BASE_URL}/arrivals/{hub_code}/20?accessToken={TOKEN}&expand=true"
+
+    url = f"{BASE_URL}/arrivals/{hub_code}/30?accessToken={TOKEN}&expand=true"
     
     try:
         response = requests.get(url)
@@ -23,40 +25,60 @@ def get_live_arrivals(hub_code="LDS"):
         
         for train in trains:
             origin_list = train.get("origin", [])
-            if not origin_list:
-                continue
+            if not origin_list: continue
                 
             origin_data = origin_list[0]
-            origin_crs = origin_data.get("crs")
-            origin_name = origin_data.get("locationName")
             
-            sta = train.get("sta")
-            eta = train.get("eta")
+            sta = train.get("sta") # Scheduled
+            eta = train.get("eta") # Estimated
             
             status = "On Time"
             delay_minutes = 0
             
+            # CALCULATE ACTUAL DELAY
             if eta == "Cancelled":
                 status = "Cancelled"
-                delay_minutes = 60
+                delay_minutes = 60 # Penalty value for analytics
             elif eta == "On time":
                 status = "On Time"
-            elif eta and eta != "On time":
-                status = "Delayed"
-                delay_minutes = 10 
-            
+                delay_minutes = 0
+            elif eta and ":" in eta: # It is a time string like "14:42"
+                try:
+                    # Parse times
+                    t_sta = datetime.strptime(sta, "%H:%M")
+                    t_eta = datetime.strptime(eta, "%H:%M")
+                    
+                    # Calculate difference in minutes
+                    diff_mins = (t_eta - t_sta).total_seconds() / 60.0
+                    
+                    # EDGE CASE: Midnight Crossing
+                    if diff_mins < -720: 
+                        diff_mins += 1440 # Add 24 hours in minutes
+                    
+
+                    delay_minutes = max(0, int(diff_mins))
+                    
+                    if delay_minutes > 0:
+                        status = "Delayed"
+                except ValueError:
+                    # Fallback if time format is weird
+                    delay_minutes = 0
+
+            # --- BUILD RESPONSE ---
             all_trains.append({
-                "from_code": origin_crs,
-                "from_name": origin_name,
-                "origin_city": origin_name,
+                "from_code": origin_data.get("crs"),
+                "from_name": origin_data.get("locationName"),
+                "origin_city": origin_data.get("locationName"),
                 "scheduled": sta,
                 "estimated": eta,
                 "status": status,
-                "delay_weight": delay_minutes,
+                "delay_weight": delay_minutes, # Now contains REAL numbers
                 "platform": train.get("platform"),
                 "operator": train.get("operator"),
                 "length": train.get("length", 0),
-                "delay_reason": train.get("delayReason")
+                "delay_reason": train.get("delayReason"),
+                # You can use the Service ID to link user reports later!
+                "train_id": train.get("serviceId") 
             })
                 
         return all_trains

@@ -25,7 +25,6 @@ app.add_middleware(
 )
 
 # --- MODELS ---
-
 class UserCreate(BaseModel):
     email: str
     password: str
@@ -71,17 +70,21 @@ class TrainResponse(BaseModel):
     delay_weight: int
     platform: Optional[str] = None
     delay_reason: Optional[str] = None
+    train_id: Optional[str] = None
 
-
-
-
-# --- ENDPOINTS ---
+# RAIL SERVICE
 @app.get("/live/departures", response_model=List[TrainResponse], tags=["Live Departures"])
 def get_live_departures():
     return rail_service.get_live_arrivals()
 
 
 
+
+
+
+
+
+# REPORT MANAGEMENT
 @app.post("/incidents", status_code=status.HTTP_201_CREATED, response_model=IncidentResponse, tags=["Incidents"])
 def create_incident(
     incident: IncidentCreate, 
@@ -93,7 +96,6 @@ def create_incident(
 
     new_incident = models.Incident(
         owner_id=user_id, # Link to the user
-        train_id=incident.train_id,
         type=incident.type,
         severity=incident.severity,
         description=incident.description
@@ -102,7 +104,6 @@ def create_incident(
     db.commit()
     db.refresh(new_incident)
     return new_incident
-
 
 
 @app.put("/incidents/{incident_id}", response_model=IncidentResponse, tags=["Incidents"])
@@ -173,23 +174,38 @@ def delete_incident(
 
 
 
+
+
+
+
+
+
+
+
 # ANALYTICS
-@app.get("/analytics/hub-health", tags=["Innovation"])
+@app.get("/analytics/hub-health", tags=["Analytics"])
 def get_hub_health(db: Session = Depends(get_db)):
     """
-    Returns a normalised 'Hub Stress Score' between 0.0 (Perfect) and 1.0 (Critical).
+    Returns a normalised 'Hub Stress Score' (0.0 - 1.0).
+    Only counts User Reports from the LAST 1 HOUR.
     """
-    # Fetch Live Rail Data
-    rail_data = rail_service.get_live_arrivals()
-    reports = db.query(models.Incident).all()
+    # Time Window
+    one_hour_ago = datetime.now() - timedelta(hours=1)
     
-    # Calculate Averages
+    # Fetch Data
+    rail_data = rail_service.get_live_arrivals()
+    
+    # Only get reports created > 1 hour ago
+    recent_reports = db.query(models.Incident).filter(
+        models.Incident.created_at >= one_hour_ago
+    ).all()
+    
     # User Reports
     avg_severity = 0
-    if reports:
-        avg_severity = sum(r.severity for r in reports) / len(reports)
+    if recent_reports:
+        avg_severity = sum(r.severity for r in recent_reports) / len(recent_reports)
 
-    # Rail Data (Max possible effectively = 60 mins)
+    # Rail Data
     total_trains = len(rail_data)
     avg_delay_minutes = 0
     if total_trains > 0:
@@ -197,36 +213,30 @@ def get_hub_health(db: Session = Depends(get_db)):
         avg_delay_minutes = total_delay_minutes / total_trains
 
     # Normalisation Logic
-    WEIGHT_SEVERITY = 0.35  # User reports account for 35% of the score
-    WEIGHT_DELAY = 0.65     # Train delays account for 65% of the score
+    WEIGHT_SEVERITY = 0.5
+    WEIGHT_DELAY = 0.5     
     
-    # Normalise Severity
     norm_severity = avg_severity / 5.0
-    
-    # Normalise Delay
-    # Prevents a single delayed train from skewing the score when 99 others are on time.
-    max_delay = min(avg_delay_minutes, 60)
-    norm_delay = max_delay / 60.0
+    clamped_delay = min(avg_delay_minutes, 60)
+    norm_delay = clamped_delay / 60.0
 
-    # Final Weighted Score (0.0 to 1.0)
+    # Final Score
     stress_score = (norm_severity * WEIGHT_SEVERITY) + (norm_delay * WEIGHT_DELAY)
     
     # Status Logic
     status = "GREEN"
-    if stress_score > 0.7:  # > 70% Stress
-        status = "RED"
-    elif stress_score > 0.3: # > 30% Stress
-        status = "AMBER"
+    if stress_score > 0.7: status = "RED"
+    elif stress_score > 0.35: status = "AMBER"
 
     return {
         "timestamp": datetime.now(),
-        "overall_hub_status": status,
-        "stress_index": round(stress_score, 2), # e.g., 0.45
+        "hub_status": status,
+        "stress_index": round(stress_score, 2),
         "raw_metrics": {
             "avg_user_severity": round(avg_severity, 1),
             "avg_delay_minutes": round(avg_delay_minutes, 1),
-            "total_trains": total_trains,
-            "total_reports": len(reports)
+            "total_live_trains": total_trains,
+            "active_reports_last_hour": len(recent_reports)
         }
     }
 
@@ -235,7 +245,13 @@ def get_hub_health(db: Session = Depends(get_db)):
 
 
 
-# ACCOUNT CREATION
+
+
+
+
+
+
+# USER ACCOUNTS
 @app.post("/users/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED, tags=["Users"])
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
     """
@@ -307,7 +323,7 @@ def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     # Find the user by email
     user = db.query(models.User).filter(models.User.email == user_credentials.email).first()
     
-    # Check if user exists AND if password matches has      h
+    # Check if user exists and if password matches hash
     if not user or not verify_password(user_credentials.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, 
@@ -320,7 +336,6 @@ def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
         "user_id": user.id,
         "email": user.email
     }
-
 
 
 def get_user_or_404(user_id: uuid.UUID, db: Session):
