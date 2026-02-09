@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
 load_dotenv()
+
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Create the Connection Engine
@@ -26,3 +27,4 @@ def get_db():
         yield db
     finally:
         db.close()
+        
