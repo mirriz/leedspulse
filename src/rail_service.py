@@ -64,6 +64,9 @@ def get_live_arrivals(hub_code="LDS"):
                     # Fallback if time format is weird
                     delay_minutes = 0
 
+            operator = train.get("operator", "")
+            refund_eligible = delay_minutes >= 15 and operator in ["Northern", "LNER", "TransPennine Express"]
+
             # --- BUILD RESPONSE ---
             all_trains.append({
                 "from_code": origin_data.get("crs"),
@@ -72,13 +75,12 @@ def get_live_arrivals(hub_code="LDS"):
                 "scheduled": sta,
                 "estimated": eta,
                 "status": status,
-                "delay_weight": delay_minutes, # Now contains REAL numbers
+                "delay_weight": delay_minutes,
                 "platform": train.get("platform"),
-                "operator": train.get("operator"),
+                "operator": operator,
+                "refund_eligible": refund_eligible,
                 "length": train.get("length", 0),
-                "delay_reason": train.get("delayReason"),
-                # You can use the Service ID to link user reports later!
-                "train_id": train.get("serviceId") 
+                "delay_reason": train.get("delayReason")
             })
                 
         return all_trains
@@ -95,6 +97,7 @@ def get_live_arrivals(hub_code="LDS"):
             "status": "Delayed",
             "delay_weight": 15,
             "platform": "12",
+            "operator": "Northern",
             "delay_reason": "Signal failure at Leeds"
         },
         {
@@ -106,6 +109,7 @@ def get_live_arrivals(hub_code="LDS"):
             "status": "On Time",
             "delay_weight": 0,
             "platform": "8",
+            "operator": "LNER",
             "delay_reason": None
         },
         {
@@ -117,6 +121,7 @@ def get_live_arrivals(hub_code="LDS"):
             "status": "Cancelled",
             "delay_weight": 60,
             "platform": "TBC",
+            "operator": "TransPennine Express",
             "delay_reason": "Train cancelled due to staff shortage"
         },
          {
@@ -128,6 +133,7 @@ def get_live_arrivals(hub_code="LDS"):
             "status": "On Time",
             "delay_weight": 0,
             "platform": "1",
+            "operator": "Northern",
             "delay_reason": None
         }
     ]

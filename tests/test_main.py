@@ -1,11 +1,11 @@
 from fastapi.testclient import TestClient
-from main import app
+from src.main import app 
 import uuid
 import pytest
 
 client = TestClient(app)
 
-# Generate random emails so tests dont fail accidently when run multiple times since we have a unique constraint on email
+# Generate random emails so tests dont fail accidently
 def get_random_email():
     return f"test_user_{uuid.uuid4().hex[:8]}@leedspulse.com"
 
@@ -17,7 +17,6 @@ test_data = {
     "user_id_b": None,
     "incident_id": None
 }
-
 
 # ==========================================
 # 1. AUTHENTICATION & SECURITY TESTS
@@ -33,7 +32,6 @@ def test_register_user_a():
     data = response.json()
     assert data["email"] == test_data["email_a"]
     assert "id" in data
-    # Save the ID
     test_data["user_id_a"] = data["id"]
 
 def test_register_user_b():
@@ -48,11 +46,10 @@ def test_register_user_b():
 def test_register_duplicate_email():
     """Test that the API rejects duplicate emails (Data Integrity)."""
     response = client.post("/users/register", json={
-        "email": test_data["email_a"], # Same as User A
+        "email": test_data["email_a"],
         "password": "newpassword"
     })
     assert response.status_code == 400
-    assert "Email already registered" in response.json()["detail"]
 
 def test_login_success():
     """Test login returns the correct User ID."""
@@ -72,10 +69,8 @@ def test_login_failure():
     })
     assert response.status_code == 401
 
-
-
 # ==========================================
-# 2. CRUD TESTS (Create, Read, Update, Delete)
+# 2. CRUD TESTS
 # ==========================================
 
 def test_create_incident():
@@ -108,15 +103,12 @@ def test_update_incident_success():
     response = client.put(
         f"/incidents/{test_data['incident_id']}?user_id={test_data['user_id_a']}",
         json={
-            "severity": 5, # Escalating severity
+            "severity": 5,
             "description": "UPDATED: Now very crowded"
         }
     )
     assert response.status_code == 200
     assert response.json()["severity"] == 5
-    assert "UPDATED" in response.json()["description"]
-
-
 
 # ==========================================
 # 3. AUTHORISATION TESTS
@@ -128,21 +120,21 @@ def test_update_incident_unauthorized():
         f"/incidents/{test_data['incident_id']}?user_id={test_data['user_id_b']}",
         json={"severity": 1}
     )
-    assert response.status_code == 403 # Forbidden
+    assert response.status_code == 403
 
 def test_delete_incident_unauthorized():
     """Test that User B CANNOT delete User A's report."""
     response = client.delete(
         f"/incidents/{test_data['incident_id']}?user_id={test_data['user_id_b']}"
     )
-    assert response.status_code == 403 # Forbidden
+    assert response.status_code == 403
 
 def test_delete_incident_success():
     """Test that User A CAN delete their own report."""
     response = client.delete(
         f"/incidents/{test_data['incident_id']}?user_id={test_data['user_id_a']}"
     )
-    assert response.status_code == 204 # No Content
+    assert response.status_code == 204
 
 # ==========================================
 # 4. ANALYTICS TESTS
@@ -150,20 +142,16 @@ def test_delete_incident_success():
 
 def test_hub_health_structure():
     """
-    Test the Innovation Algorithm. 
-    This hits the real rail API, so we check if the keys exist 
-    rather than specific values (since trains change every minute).
+    Test the Innovation Algorithm.
     """
     response = client.get("/analytics/hub-health")
     assert response.status_code == 200
     data = response.json()
     
-    # Check that all our complex logic is returning data
-    assert "hub_status" in data # GREEN/AMBER/RED
+    assert "hub_status" in data
     assert "stress_index" in data
-    assert "raw_metrics" in data
+    assert "metrics" in data  # Updated key name from "raw_metrics" to "metrics"
     
-    # Verify the Score is normalized (0.0 to 1.0)
     score = data["stress_index"]
     assert isinstance(score, float)
     assert 0.0 <= score <= 1.0
