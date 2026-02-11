@@ -155,3 +155,69 @@ def test_hub_health_structure():
     score = data["stress_index"]
     assert isinstance(score, float)
     assert 0.0 <= score <= 1.0
+
+# ==========================================
+# 5. EDGE CASES & ERROR HANDLING
+# ==========================================
+
+def test_login_non_existent_user():
+    """Test login with an email that is not in the database."""
+    response = client.post("/users/login", json={
+        "email": "ghost_user@leedspulse.com",
+        "password": "password123"
+    })
+    assert response.status_code == 401
+    assert "Invalid credentials" in response.json()["detail"]
+
+def test_create_incident_invalid_user():
+    """
+    Test creating a report with a random User ID that doesn't exist.
+    This ensures referential integrity (Foreign Key checks).
+    """
+    random_uuid = str(uuid.uuid4())
+    response = client.post(
+        f"/incidents?user_id={random_uuid}",
+        json={
+            "type": "Delay",
+            "severity": 3,
+            "description": "Ghost User Report"
+        }
+    )
+    assert response.status_code == 404
+    assert "User not found" in response.json()["detail"]
+
+def test_update_non_existent_incident():
+    """Test updating a report UUID that doesn't exist."""
+    random_incident_id = str(uuid.uuid4())
+    
+    # We use a valid user_id (User A) to pass the first check, 
+    # but the incident_id is fake.
+    response = client.put(
+        f"/incidents/{random_incident_id}?user_id={test_data['user_id_a']}",
+        json={"severity": 1}
+    )
+    assert response.status_code == 404
+    assert "Incident not found" in response.json()["detail"]
+
+def test_delete_non_existent_incident():
+    """Test deleting a report that has already been deleted or never existed."""
+    random_incident_id = str(uuid.uuid4())
+    
+    response = client.delete(
+        f"/incidents/{random_incident_id}?user_id={test_data['user_id_a']}"
+    )
+    assert response.status_code == 404
+
+def test_validation_missing_fields():
+    """
+    Test that the API rejects incomplete data (Pydantic Validation).
+    Sending a report without 'severity' should fail.
+    """
+    response = client.post(
+        f"/incidents?user_id={test_data['user_id_a']}",
+        json={
+            "type": "Crowding"
+            # Missing 'severity'
+        }
+    )
+    assert response.status_code == 422 # Unprocessable Entity
