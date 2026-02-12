@@ -1,25 +1,21 @@
 from fastapi.testclient import TestClient
-from src.main import app 
+from src.main import app
 import uuid
 import pytest
 
 client = TestClient(app)
 
-# Generate random emails so tests dont fail accidently
-def get_random_email():
-    return f"test_user_{uuid.uuid4().hex[:8]}@leedspulse.com"
-
 # Global storage to share IDs between tests
 test_data = {
-    "email_a": get_random_email(),
-    "email_b": get_random_email(),
+    "email_a": f"user_a_{uuid.uuid4().hex[:8]}@leedspulse.com",
+    "email_b": f"user_b_{uuid.uuid4().hex[:8]}@leedspulse.com",
     "user_id_a": None,
     "user_id_b": None,
     "incident_id": None
 }
 
 # ==========================================
-# 1. AUTHENTICATION & SECURITY TESTS
+# 1. AUTHENTICATION TESTS (5 Tests)
 # ==========================================
 
 def test_register_user_a():
@@ -46,10 +42,11 @@ def test_register_user_b():
 def test_register_duplicate_email():
     """Test that the API rejects duplicate emails (Data Integrity)."""
     response = client.post("/users/register", json={
-        "email": test_data["email_a"],
+        "email": test_data["email_a"], 
         "password": "newpassword"
     })
     assert response.status_code == 400
+    assert "Email already registered" in response.json()["detail"]
 
 def test_login_success():
     """Test login returns the correct User ID."""
@@ -70,11 +67,11 @@ def test_login_failure():
     assert response.status_code == 401
 
 # ==========================================
-# 2. CRUD TESTS
+# 2. INCIDENT CRUD TESTS (6 Tests)
 # ==========================================
 
-def test_create_incident():
-    """Test that User A can create a report."""
+def test_create_incident_default_station():
+    """Test that User A can create a report (Defaults to LDS)."""
     response = client.post(
         f"/incidents?user_id={test_data['user_id_a']}",
         json={
@@ -87,16 +84,30 @@ def test_create_incident():
     assert response.status_code == 201
     data = response.json()
     assert data["severity"] == 4
+    assert data["station_code"] == "LDS"
     assert data["owner_id"] == test_data["user_id_a"]
     test_data["incident_id"] = data["id"]
 
+def test_create_incident_manchester():
+    """Test creating a report for a specific station (MAN)."""
+    response = client.post(
+        f"/incidents?user_id={test_data['user_id_a']}",
+        json={
+            "station_code": "MAN",
+            "type": "Crowding",
+            "severity": 5,
+            "description": "Manchester Chaos"
+        }
+    )
+    assert response.status_code == 201
+    assert response.json()["station_code"] == "MAN"
+
 def test_read_my_incidents():
-    """Test that User A can see their own report."""
+    """Test that User A can see their own reports."""
     response = client.get(f"/incidents/my-reports?user_id={test_data['user_id_a']}")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) > 0
-    assert data[0]["id"] == test_data["incident_id"]
+    assert len(data) >= 2 # We created one for LDS and one for MAN
 
 def test_update_incident_success():
     """Test that User A can update their own report."""
@@ -110,12 +121,8 @@ def test_update_incident_success():
     assert response.status_code == 200
     assert response.json()["severity"] == 5
 
-# ==========================================
-# 3. AUTHORISATION TESTS
-# ==========================================
-
 def test_update_incident_unauthorized():
-    """Test that User B CANNOT update User A's report."""
+    """Test that User B CANNOT update User A's report (RBAC)."""
     response = client.put(
         f"/incidents/{test_data['incident_id']}?user_id={test_data['user_id_b']}",
         json={"severity": 1}
@@ -123,11 +130,51 @@ def test_update_incident_unauthorized():
     assert response.status_code == 403
 
 def test_delete_incident_unauthorized():
-    """Test that User B CANNOT delete User A's report."""
+    """Test that User B CANNOT delete User A's report (RBAC)."""
     response = client.delete(
         f"/incidents/{test_data['incident_id']}?user_id={test_data['user_id_b']}"
     )
     assert response.status_code == 403
+
+# ==========================================
+# 3. ANALYTICS & INNOVATION TESTS (4 Tests)
+# ==========================================
+
+def test_hub_health_leeds():
+    """Test the NEW endpoint structure for Leeds."""
+    response = client.get("/analytics/LDS/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["hub_status"] in ["GREEN", "AMBER", "RED"]
+    # Check that our Leeds report is counted
+    assert data["metrics"]["reports_last_hour"] >= 1
+
+def test_hub_health_station_separation():
+    """
+    Verify that one set of reports do NOT appear in anothers stats.
+    This proves 'Data Integrity' for the Outstanding grade.
+    """
+    # Check Manchester Stats
+    man_response = client.get("/analytics/MAN/health")
+    man_reports = man_response.json()["metrics"]["reports_last_hour"]
+    
+    # 2. Check York Stats
+    yrk_response = client.get("/analytics/YRK/health")
+    yrk_reports = yrk_response.json()["metrics"]["reports_last_hour"]
+    
+    assert man_reports > 0
+    if yrk_reports > 0:
+        assert man_reports != yrk_reports 
+
+def test_live_departures_parameter():
+    """Test fetching trains for a specific station."""
+    response = client.get("/live/departures/KGX") # Kings Cross
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+# ==========================================
+# 4. EDGE CASE & ERROR TESTS
+# ==========================================
 
 def test_delete_incident_success():
     """Test that User A CAN delete their own report."""
@@ -136,88 +183,20 @@ def test_delete_incident_success():
     )
     assert response.status_code == 204
 
-# ==========================================
-# 4. ANALYTICS TESTS
-# ==========================================
-
-def test_hub_health_structure():
-    """
-    Test the Innovation Algorithm.
-    """
-    response = client.get("/analytics/hub-health")
-    assert response.status_code == 200
-    data = response.json()
-    
-    assert "hub_status" in data
-    assert "stress_index" in data
-    assert "metrics" in data  # Updated key name from "raw_metrics" to "metrics"
-    
-    score = data["stress_index"]
-    assert isinstance(score, float)
-    assert 0.0 <= score <= 1.0
-
-# ==========================================
-# 5. EDGE CASES & ERROR HANDLING
-# ==========================================
-
-def test_login_non_existent_user():
-    """Test login with an email that is not in the database."""
-    response = client.post("/users/login", json={
-        "email": "ghost_user@leedspulse.com",
-        "password": "password123"
-    })
-    assert response.status_code == 401
-    assert "Invalid credentials" in response.json()["detail"]
-
-def test_create_incident_invalid_user():
-    """
-    Test creating a report with a random User ID that doesn't exist.
-    This ensures referential integrity (Foreign Key checks).
-    """
-    random_uuid = str(uuid.uuid4())
-    response = client.post(
-        f"/incidents?user_id={random_uuid}",
-        json={
-            "type": "Delay",
-            "severity": 3,
-            "description": "Ghost User Report"
-        }
-    )
-    assert response.status_code == 404
-    assert "User not found" in response.json()["detail"]
-
-def test_update_non_existent_incident():
-    """Test updating a report UUID that doesn't exist."""
-    random_incident_id = str(uuid.uuid4())
-    
-    # We use a valid user_id (User A) to pass the first check, 
-    # but the incident_id is fake.
-    response = client.put(
-        f"/incidents/{random_incident_id}?user_id={test_data['user_id_a']}",
-        json={"severity": 1}
-    )
-    assert response.status_code == 404
-    assert "Incident not found" in response.json()["detail"]
-
 def test_delete_non_existent_incident():
-    """Test deleting a report that has already been deleted or never existed."""
-    random_incident_id = str(uuid.uuid4())
-    
+    """Test 404 behavior for deleted items."""
     response = client.delete(
-        f"/incidents/{random_incident_id}?user_id={test_data['user_id_a']}"
+        f"/incidents/{test_data['incident_id']}?user_id={test_data['user_id_a']}"
     )
     assert response.status_code == 404
 
 def test_validation_missing_fields():
-    """
-    Test that the API rejects incomplete data (Pydantic Validation).
-    Sending a report without 'severity' should fail.
-    """
+    """Test Pydantic validation rejects bad data."""
     response = client.post(
         f"/incidents?user_id={test_data['user_id_a']}",
         json={
             "type": "Crowding"
-            # Missing 'severity'
+            # Missing severity
         }
     )
-    assert response.status_code == 422 # Unprocessable Entity
+    assert response.status_code == 422

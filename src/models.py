@@ -23,9 +23,10 @@ class Incident(Base):
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     owner = relationship("User", back_populates="incidents")
     
-    # Your existing fields
+
     train_id = Column(String, nullable=True) 
     type = Column(String)
     severity = Column(Integer)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    station_code = Column(String, index=True, default="LDS")

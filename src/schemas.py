@@ -22,6 +22,7 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class IncidentCreate(BaseModel):
+    station_code: str = "LDS"  # Default to Leeds if not sent
     train_id: Optional[str] = None
     type: str
     severity: int

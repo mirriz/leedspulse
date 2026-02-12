@@ -9,8 +9,8 @@ BASE_URL = "https://huxley2.azurewebsites.net"
 TOKEN = os.environ.get("OLDBWS_TOKEN")
 
 def get_live_arrivals(hub_code="LDS"):
-
-    url = f"{BASE_URL}/arrivals/{hub_code}/30?accessToken={TOKEN}&expand=true"
+    # Use '/all' to get Arrivals AND Departures
+    url = f"{BASE_URL}/all/{hub_code}/50?accessToken={TOKEN}&expand=true"
     
     try:
         response = requests.get(url)
@@ -25,53 +25,62 @@ def get_live_arrivals(hub_code="LDS"):
         
         for train in trains:
             origin_list = train.get("origin", [])
-            if not origin_list: continue
-                
-            origin_data = origin_list[0]
+            if origin_list:
+                origin_crs = origin_list[0].get("crs")
+                origin_name = origin_list[0].get("locationName")
+            else:
+                origin_crs = "UNK"
+                origin_name = "Unknown Origin"
             
-            sta = train.get("sta") # Scheduled
-            eta = train.get("eta") # Estimated
+
+            sta = train.get("sta") 
+            eta = train.get("eta")
             
+            # If no arrival time, starts there
+            if not sta:
+                sta = train.get("std")
+                eta = train.get("etd")
+            
+            # --- 3. DELAY CALCULATION ---
             status = "On Time"
             delay_minutes = 0
             
-            # CALCULATE ACTUAL DELAY
             if eta == "Cancelled":
                 status = "Cancelled"
-                delay_minutes = 60 # Penalty value for analytics
+                delay_minutes = 60 # High penalty for analytics
             elif eta == "On time":
                 status = "On Time"
                 delay_minutes = 0
-            elif eta and ":" in eta: # It is a time string like "14:42"
+            elif eta and ":" in eta and sta and ":" in sta: 
                 try:
-                    # Parse times
+                    # Parse HH:MM strings
                     t_sta = datetime.strptime(sta, "%H:%M")
                     t_eta = datetime.strptime(eta, "%H:%M")
                     
                     # Calculate difference in minutes
                     diff_mins = (t_eta - t_sta).total_seconds() / 60.0
                     
-                    # EDGE CASE: Midnight Crossing
+                    # Handle midnight edge case
                     if diff_mins < -720: 
-                        diff_mins += 1440 # Add 24 hours in minutes
+                        diff_mins += 1440 
                     
-
                     delay_minutes = max(0, int(diff_mins))
                     
                     if delay_minutes > 0:
                         status = "Delayed"
-                except ValueError:
-                    # Fallback if time format is weird
+                except (ValueError, TypeError):
+                    # Fallback if time format is unexpected
                     delay_minutes = 0
 
+            # --- 4. REFUND RADAR ---
             operator = train.get("operator", "")
+            # 15 mins delay on major operators = Eligible
             refund_eligible = delay_minutes >= 15 and operator in ["Northern", "LNER", "TransPennine Express"]
 
-            # --- BUILD RESPONSE ---
             all_trains.append({
-                "from_code": origin_data.get("crs"),
-                "from_name": origin_data.get("locationName"),
-                "origin_city": origin_data.get("locationName"),
+                "from_code": origin_crs,
+                "from_name": origin_name,
+                "origin_city": origin_name,
                 "scheduled": sta,
                 "estimated": eta,
                 "status": status,
@@ -80,69 +89,20 @@ def get_live_arrivals(hub_code="LDS"):
                 "operator": operator,
                 "refund_eligible": refund_eligible,
                 "length": train.get("length", 0),
-                "delay_reason": train.get("delayReason")
+                "delay_reason": train.get("delayReason"),
+                "train_id": train.get("serviceId")
             })
                 
         return all_trains
 
     except Exception as e:
         print(f"API Error: {e}")
-        return [
-        {
-            "from_code": "MAN",
-            "from_name": "Manchester Piccadilly",
-            "origin_city": "Manchester Piccadilly",
-            "scheduled": "18:00",
-            "estimated": "18:15", # Late!
-            "status": "Delayed",
-            "delay_weight": 15,
-            "platform": "12",
-            "operator": "Northern",
-            "delay_reason": "Signal failure at Leeds"
-        },
-        {
-            "from_code": "YRK",
-            "from_name": "York",
-            "origin_city": "York",
-            "scheduled": "18:05",
-            "estimated": "On time",
-            "status": "On Time",
-            "delay_weight": 0,
-            "platform": "8",
-            "operator": "LNER",
-            "delay_reason": None
-        },
-        {
-            "from_code": "WKF",
-            "from_name": "Wakefield Westgate",
-            "origin_city": "London Kings Cross",
-            "scheduled": "18:10",
-            "estimated": "Cancelled", # Severe!
-            "status": "Cancelled",
-            "delay_weight": 60,
-            "platform": "TBC",
-            "operator": "TransPennine Express",
-            "delay_reason": "Train cancelled due to staff shortage"
-        },
-         {
-            "from_code": "HGT",
-            "from_name": "Harrogate",
-            "origin_city": "Harrogate",
-            "scheduled": "18:20",
-            "estimated": "On time",
-            "status": "On Time",
-            "delay_weight": 0,
-            "platform": "1",
-            "operator": "Northern",
-            "delay_reason": None
-        }
-    ]
+        # Fail gracefully with empty list (or mock data if you prefer)
+        return []
 
 if __name__ == "__main__":
-
-    print("Scanning for trains (Direct & Pass-Through)...\n")
+    print("Scanning for all trains (Arrivals & Departures)...\n")
     results = get_live_arrivals()
-        
     print(f"Found {len(results)} relevant trains.")
     for t in results:
-        print(f" -> [Line: {t['from_code']}] {t['scheduled']} Service from {t['origin_city']}: {t['status']}. {t['delay_reason'] if t['delay_reason'] else ''} ({t['estimated']}). Platform {t['platform'] if t['platform'] else 'TBC'}")
+        print(f" -> [{t['operator']}] {t['scheduled']} from {t['from_name']}: {t['status']} ({t['estimated']})")
