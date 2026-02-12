@@ -6,21 +6,23 @@ from .. import models, schemas, database, rail_service
 
 router = APIRouter(tags=["Analytics"])
 
-@router.get("/live/departures", response_model=List[schemas.TrainResponse])
-def get_live_departures():
-    return rail_service.get_live_arrivals()
+@router.get("/live/departures/{station_code}", response_model=List[schemas.TrainResponse])
+def get_live_departures(station_code: str):
+    return rail_service.get_live_arrivals(hub_code=station_code)
 
-@router.get("/analytics/hub-health")
-def get_hub_health(db: Session = Depends(database.get_db)):
-    # 1. Logic: Last 1 Hour
+@router.get("/analytics/{station_code}/health")
+def get_hub_health(station_code: str, db: Session = Depends(database.get_db)):    # 1. Logic: Last 1 Hour
+    
+    rail_data = rail_service.get_live_arrivals(hub_code=station_code)
+
+
     one_hour_ago = datetime.now() - timedelta(hours=1)
-    
-    rail_data = rail_service.get_live_arrivals()
     recent_reports = db.query(models.Incident).filter(
-        models.Incident.created_at >= one_hour_ago
+        models.Incident.created_at >= one_hour_ago,
+        models.Incident.station_code == station_code # <--- FILTER ADDED
     ).all()
-    
-    # 2. Metrics
+
+
     cancelled_trains = len([t for t in rail_data if t['status'] == 'Cancelled'])
     
     active_trains = [t for t in rail_data if t['status'] != 'Cancelled']
