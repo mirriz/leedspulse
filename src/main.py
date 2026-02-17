@@ -8,7 +8,7 @@ from src.routers import incidents, analytics
 # Create Tables
 models.Base.metadata.create_all(bind=database.engine)
 
-app = FastAPI(title="LeedsPulse API", version="2.0.0")
+app = FastAPI(title="RailPulse API", version="2.0.0")
 
 # CORS
 app.add_middleware(
@@ -26,4 +26,4 @@ app.include_router(analytics.router)
 
 @app.get("/")
 def root():
-    return {"message": "LeedsPulse API is Online"}
+    return {"message": "RailPulse API is Online"}
