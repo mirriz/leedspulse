@@ -19,7 +19,7 @@ Traditional transport apps only show delays. They fail to capture the passenger 
 RailPulse solves this via **Novel Data Integration**:
 1.  **Ingests Live Data:** Consumes the Huxley National Rail proxy for real-time arrivals/departures.
 2.  **Crowdsources Incidents:** Allows authenticated users to report specific issues (crowding, antisocial behaviour).
-3.  **The "Hub Health" Algorithm:** Merges these inputs into a normalised Stress Index (0.0 - 1.0) to visualise station health instantly.
+3.  **The Hub Health Algorithm:** Merges these inputs into a normalised Stress Index (0.0 - 1.0) to visualise station health instantly.
 
 ---
 
@@ -32,7 +32,7 @@ RailPulse solves this via **Novel Data Integration**:
 
 ### Intelligent Analytics (Stress Index)
 The core IP of this project is the weighted algorithm found in `src/routers/analytics.py`. It determines station status based on:
-* **60% Weight:** Live Rail Delay (Normalized to 60 mins).
+* **60% Weight:** Live Rail Delay (Normalised to 60 mins).
 * **40% Weight:** User Report Severity (Last 1 hour).
 * **Override:** If `cancelled_trains > threshold`, the status forces **RED** regardless of delay metrics.
 
@@ -129,3 +129,4 @@ This project is submitted for COMP3011: Web Services and Web Data.
 Author: Alexander East
 
 Declaration: Code is my own work, except where libraries are imported. GenAI was used for debugging and planning as per the assessment category.
+
