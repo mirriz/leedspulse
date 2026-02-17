@@ -94,7 +94,6 @@ def get_live_arrivals(hub_code="LDS"):
         }
 
     except Exception as e:
-        print(f"API Error: {e}")
         return {"station_name": "Unknown", "trains": []}
 
 if __name__ == "__main__":
