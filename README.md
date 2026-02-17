@@ -103,25 +103,28 @@ pytest -v
 
 ## Project Structure
 
+```text
 railpulse/
 ├── src/
 │   ├── routers/
-│   │   ├── analytics.py   # The "Hub Health" Algorithm
-│   │   ├── auth.py        # Login & Registration endpoints
-│   │   └── incidents.py   # CRUD for user reports
-│   ├── auth.py            # JWT Token logic & Password Hashing
-│   ├── database.py        # Database connection & Session logic
+│   │   ├── analytics.py   # Algorithm & Live Data
+│   │   ├── auth.py        # User Registration & Login 
+│   │   └── incidents.py   # CRUD Operations for Reports
+│   ├── sql/
+│   │   ├── create_tables.sql  # Schema definition
+│   │   └── drop_tests.sql     # Script for testing
+│   ├── auth.py            # JWT Logic, Password Hashing & RBAC
+│   ├── database.py        # Database Connection
 │   ├── main.py            # Application Entrypoint
 │   ├── models.py          # SQLAlchemy Database Models
-│   ├── rail_service.py    # Integration with National Rail API
-│   ├── schemas.py         # Pydantic Data Validation Models
-│   └── sql/               # SQL scripts for setup/teardown
+│   ├── rail_service.py    # National Rail (Huxley) API Integration
+│   └── schemas.py         # Pydantic Data Validation
 ├── tests/
-│   └── test_main.py       # Tests
+│   └── test_main.py       # Test Suite
+├── pytest.ini             # Test Configuration
 ├── requirements.txt       # Dependencies
-├── pytest.ini             # Test config
-└── README.md              # Project Documentation
-
+└── README.md              # Documentation
+```
 
 ## Academic Integrity 
 This project is submitted for COMP3011: Web Services and Web Data.
@@ -129,5 +132,6 @@ This project is submitted for COMP3011: Web Services and Web Data.
 Author: Alexander East
 
 Declaration: Code is my own work, except where libraries are imported. GenAI was used for debugging and planning as per the assessment category.
+
 
 
