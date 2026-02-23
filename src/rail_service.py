@@ -9,134 +9,96 @@ BASE_URL = "https://huxley2.azurewebsites.net"
 TOKEN = os.environ.get("OLDBWS_TOKEN")
 
 def get_live_arrivals(hub_code="LDS"):
-
-    url = f"{BASE_URL}/arrivals/{hub_code}/30?accessToken={TOKEN}&expand=true"
+    # Using /all/ to capture both Arrivals and Departures
+    url = f"{BASE_URL}/all/{hub_code}/50?accessToken={TOKEN}&expand=true"
     
     try:
         response = requests.get(url)
         response.raise_for_status()
         data = response.json()
         
+        # 1. CAPTURE THE FULL STATION NAME
+        station_name = data.get("locationName", hub_code) 
+        
         trains = data.get("trainServices")
         if not trains:
-            return []
+            return {"station_name": station_name, "trains": []}
 
         all_trains = []
         
         for train in trains:
+            # Safe Origin Parsing
             origin_list = train.get("origin", [])
-            if not origin_list: continue
-                
-            origin_data = origin_list[0]
+            if origin_list:
+                origin_crs = origin_list[0].get("crs")
+                origin_name = origin_list[0].get("locationName")
+            else:
+                origin_crs = "UNK"
+                origin_name = "Unknown Origin"
             
-            sta = train.get("sta") # Scheduled
-            eta = train.get("eta") # Estimated
+            # Time Parsing (Arrivals vs Starts)
+            sta = train.get("sta") 
+            eta = train.get("eta")
+            
+            if not sta:
+                sta = train.get("std")
+                eta = train.get("etd")
             
             status = "On Time"
             delay_minutes = 0
             
-            # CALCULATE ACTUAL DELAY
+            # Delay Logic
             if eta == "Cancelled":
                 status = "Cancelled"
-                delay_minutes = 60 # Penalty value for analytics
+                delay_minutes = 60 
             elif eta == "On time":
                 status = "On Time"
                 delay_minutes = 0
-            elif eta and ":" in eta: # It is a time string like "14:42"
+            elif eta and ":" in eta and sta and ":" in sta: 
                 try:
-                    # Parse times
                     t_sta = datetime.strptime(sta, "%H:%M")
                     t_eta = datetime.strptime(eta, "%H:%M")
-                    
-                    # Calculate difference in minutes
                     diff_mins = (t_eta - t_sta).total_seconds() / 60.0
                     
-                    # EDGE CASE: Midnight Crossing
-                    if diff_mins < -720: 
-                        diff_mins += 1440 # Add 24 hours in minutes
+                    if diff_mins < -720: diff_mins += 1440
                     
-
                     delay_minutes = max(0, int(diff_mins))
-                    
-                    if delay_minutes > 0:
-                        status = "Delayed"
-                except ValueError:
-                    # Fallback if time format is weird
+                    if delay_minutes > 0: status = "Delayed"
+                except (ValueError, TypeError):
                     delay_minutes = 0
 
-            # --- BUILD RESPONSE ---
+            # Refund Logic
+            operator = train.get("operator", "")
+            refund_eligible = delay_minutes >= 15
+
             all_trains.append({
-                "from_code": origin_data.get("crs"),
-                "from_name": origin_data.get("locationName"),
-                "origin_city": origin_data.get("locationName"),
+                "from_code": origin_crs,
+                "from_name": origin_name,
+                "origin_city": origin_name,
                 "scheduled": sta,
                 "estimated": eta,
                 "status": status,
-                "delay_weight": delay_minutes, # Now contains REAL numbers
+                "delay_weight": delay_minutes,
                 "platform": train.get("platform"),
-                "operator": train.get("operator"),
+                "operator": operator,
+                "refund_eligible": refund_eligible,
                 "length": train.get("length", 0),
                 "delay_reason": train.get("delayReason"),
-                # You can use the Service ID to link user reports later!
-                "train_id": train.get("serviceId") 
+                "train_id": train.get("serviceId")
             })
                 
-        return all_trains
+        # 2. RETURN DICTIONARY (Fixes your error)
+        return {
+            "station_name": station_name,
+            "trains": all_trains
+        }
 
     except Exception as e:
-        print(f"API Error: {e}")
-        return [
-        {
-            "from_code": "MAN",
-            "from_name": "Manchester Piccadilly",
-            "origin_city": "Manchester Piccadilly",
-            "scheduled": "18:00",
-            "estimated": "18:15", # Late!
-            "status": "Delayed",
-            "delay_weight": 15,
-            "platform": "12",
-            "delay_reason": "Signal failure at Leeds"
-        },
-        {
-            "from_code": "YRK",
-            "from_name": "York",
-            "origin_city": "York",
-            "scheduled": "18:05",
-            "estimated": "On time",
-            "status": "On Time",
-            "delay_weight": 0,
-            "platform": "8",
-            "delay_reason": None
-        },
-        {
-            "from_code": "WKF",
-            "from_name": "Wakefield Westgate",
-            "origin_city": "London Kings Cross",
-            "scheduled": "18:10",
-            "estimated": "Cancelled", # Severe!
-            "status": "Cancelled",
-            "delay_weight": 60,
-            "platform": "TBC",
-            "delay_reason": "Train cancelled due to staff shortage"
-        },
-         {
-            "from_code": "HGT",
-            "from_name": "Harrogate",
-            "origin_city": "Harrogate",
-            "scheduled": "18:20",
-            "estimated": "On time",
-            "status": "On Time",
-            "delay_weight": 0,
-            "platform": "1",
-            "delay_reason": None
-        }
-    ]
+        return {"station_name": "Unknown", "trains": []}
 
 if __name__ == "__main__":
-
-    print("Scanning for trains (Direct & Pass-Through)...\n")
+    print("Scanning for all trains (Arrivals & Departures)...\n")
     results = get_live_arrivals()
-        
-    print(f"Found {len(results)} relevant trains.")
-    for t in results:
-        print(f" -> [Line: {t['from_code']}] {t['scheduled']} Service from {t['origin_city']}: {t['status']}. {t['delay_reason'] if t['delay_reason'] else ''} ({t['estimated']}). Platform {t['platform'] if t['platform'] else 'TBC'}")
+    print(f"Found {len(results['trains'])} relevant trains.")
+    for t in results['trains']:
+        print(f" -> [{t['operator']}] {t['scheduled']} from {t['from_name']}: {t['status']} ({t['estimated']})")
