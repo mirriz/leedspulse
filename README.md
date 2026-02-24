@@ -131,7 +131,8 @@ This project is submitted for COMP3011: Web Services and Web Data.
 
 Author: Alexander East
 
-Declaration: Code is my own work, except where libraries are imported. GenAI was used for debugging and planning as per the assessment category.
+Declaration: GenAI was used for planning, debugging, and structuring code and comments as per the assessment category.
+
 
 
 
